@@ -189,4 +189,4 @@ pyrightconfig.json
 api/.vscode
 
 .idea/
-docker/docker-compose.override.yaml
+docker-compose.override.yaml
