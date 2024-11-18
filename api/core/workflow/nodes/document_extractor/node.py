@@ -6,12 +6,14 @@ import docx
 import pandas as pd
 import pypdfium2
 import yaml
+from unstructured.partition.api import partition_via_api
 from unstructured.partition.email import partition_email
 from unstructured.partition.epub import partition_epub
 from unstructured.partition.msg import partition_msg
 from unstructured.partition.ppt import partition_ppt
 from unstructured.partition.pptx import partition_pptx
 
+from configs import dify_config
 from core.file import File, FileTransferMethod, file_manager
 from core.helper import ssrf_proxy
 from core.variables import ArrayFileSegment
@@ -141,14 +143,14 @@ def _extract_text_by_file_extension(*, file_content: bytes, file_extension: str)
 
 def _extract_text_from_plain_text(file_content: bytes) -> str:
     try:
-        return file_content.decode("utf-8")
+        return file_content.decode("utf-8", "ignore")
     except UnicodeDecodeError as e:
         raise TextExtractionError("Failed to decode plain text file") from e
 
 
 def _extract_text_from_json(file_content: bytes) -> str:
     try:
-        json_data = json.loads(file_content.decode("utf-8"))
+        json_data = json.loads(file_content.decode("utf-8", "ignore"))
         return json.dumps(json_data, indent=2, ensure_ascii=False)
     except (UnicodeDecodeError, json.JSONDecodeError) as e:
         raise TextExtractionError(f"Failed to decode or parse JSON file: {e}") from e
@@ -157,7 +159,7 @@ def _extract_text_from_json(file_content: bytes) -> str:
 def _extract_text_from_yaml(file_content: bytes) -> str:
     """Extract the content from yaml file"""
     try:
-        yaml_data = yaml.safe_load_all(file_content.decode("utf-8"))
+        yaml_data = yaml.safe_load_all(file_content.decode("utf-8", "ignore"))
         return yaml.dump_all(yaml_data, allow_unicode=True, sort_keys=False)
     except (UnicodeDecodeError, yaml.YAMLError) as e:
         raise TextExtractionError(f"Failed to decode or parse YAML file: {e}") from e
@@ -196,10 +198,8 @@ def _download_file_content(file: File) -> bytes:
             response = ssrf_proxy.get(file.remote_url)
             response.raise_for_status()
             return response.content
-        elif file.transfer_method == FileTransferMethod.LOCAL_FILE:
-            return file_manager.download(file)
         else:
-            raise ValueError(f"Unsupported transfer method: {file.transfer_method}")
+            return file_manager.download(file)
     except Exception as e:
         raise FileDownloadError(f"Error downloading file: {str(e)}") from e
 
@@ -217,7 +217,7 @@ def _extract_text_from_file(file: File):
 
 def _extract_text_from_csv(file_content: bytes) -> str:
     try:
-        csv_file = io.StringIO(file_content.decode("utf-8"))
+        csv_file = io.StringIO(file_content.decode("utf-8", "ignore"))
         csv_reader = csv.reader(csv_file)
         rows = list(csv_reader)
 
@@ -263,7 +263,14 @@ def _extract_text_from_ppt(file_content: bytes) -> str:
 def _extract_text_from_pptx(file_content: bytes) -> str:
     try:
         with io.BytesIO(file_content) as file:
-            elements = partition_pptx(file=file)
+            if dify_config.UNSTRUCTURED_API_URL and dify_config.UNSTRUCTURED_API_KEY:
+                elements = partition_via_api(
+                    file=file,
+                    api_url=dify_config.UNSTRUCTURED_API_URL,
+                    api_key=dify_config.UNSTRUCTURED_API_KEY,
+                )
+            else:
+                elements = partition_pptx(file=file)
         return "\n".join([getattr(element, "text", "") for element in elements])
     except Exception as e:
         raise TextExtractionError(f"Failed to extract text from PPTX: {str(e)}") from e
