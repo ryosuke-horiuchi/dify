@@ -1,0 +1,7 @@
+docker-compose.override.yaml
+docker/.env
+docker/docker-compose.override.yaml
+docker/nginx/conf.d/
+docker/volumes/app/
+docker/volumes/redis/
+docker/volumes/weaviate/
